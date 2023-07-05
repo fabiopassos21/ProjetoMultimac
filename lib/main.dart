@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 final CollectionReference usuariosCollection =
 FirebaseFirestore.instance.collection('Usuarios');
 
+
 class Teste extends StatefulWidget {
   const Teste({Key? key}) : super(key: key);
 
@@ -21,18 +22,44 @@ class _TesteState extends State<Teste> {
   final TextEditingController passwordController = TextEditingController();
   String errorMessage = '';
 
-  void adicionarUsuario() {
+  Future<void> adicionarUsuario() async {
     String email = emailController.text;
     String senha = passwordController.text;
 
-    usuariosCollection.add({
-      'email': email,
-      'senha': senha,
-    }).then((value) {
-      print('Usuário $email adicionado com ID: ${value.id}');
-    }).catchError((error) {
-      print('Erro ao adicionar o usuário: $error');
-    });
+    // Verifica se o usuário já existe no Firestore com o mesmo email
+    QuerySnapshot<Object?> snapshot = await usuariosCollection
+        .where('email', isEqualTo: email)
+        .get();
+
+    if (snapshot.docs.isEmpty) {
+      // O usuário não existe, então pode adicionar ao Firestore
+      usuariosCollection.add({
+        'email': email,
+        'senha': senha,
+        'saldo': 0, // Adiciona o campo "saldo" com o valor 0
+      }).then((value) {
+        print('Usuário $email adicionado com ID: ${value.id}');
+      }).catchError((error) {
+        print('Erro ao adicionar o usuário: $error');
+      });
+    } else {
+      // O usuário já existe, não é necessário adicionar novamente
+      print('Usuário $email já existe no Firestore');
+    }
+  }
+
+  Future<int> getSaldoFromFirestore(String email) async {
+    QuerySnapshot<Object?> snapshot = await usuariosCollection
+        .where('email', isEqualTo: email)
+        .get();
+
+    if (snapshot.docs.isNotEmpty) {
+      // O usuário existe, retorna o valor do saldo
+      return snapshot.docs[0]['saldo'] ?? 0;
+    } else {
+      // O usuário não existe, retorna 0 como saldo padrão
+      return 0;
+    }
   }
 
   Future<void> _login(BuildContext context) async {
@@ -47,12 +74,14 @@ class _TesteState extends State<Teste> {
       await prefs.setBool('isLoggedIn', true);
       print("DEU CERTO UHULLL");
       print('Usuário logado: ${userCredential.user!.email}');
-      Navigator.push(
+
+      // Obtém o saldo do usuário do Firestore
+      int saldo = await getSaldoFromFirestore(emailController.text);
+
+      Navigator.pushReplacement (
         context,
-        MaterialPageRoute(builder: (context) => TelaPrincipal()),
+        MaterialPageRoute(builder: (context) => TelaPrincipal(saldo: saldo)),
       );
-      // Chamar a função adicionarUsuario após o login ser bem-sucedido
-      adicionarUsuario();
     } on FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found') {
         Fluttertoast.showToast(msg: 'E-mail ou senha incorretos');
@@ -82,7 +111,7 @@ class _TesteState extends State<Teste> {
       Fluttertoast.showToast(msg: 'Login realizado com sucesso');
 
       // Chamar a função adicionarUsuario após o registro ser bem-sucedido
-      adicionarUsuario();
+      await adicionarUsuario();
     } on FirebaseAuthException catch (e) {
       if (e.code == 'weak-password') {
         errorMessage = 'Senha fraca. Escolha uma senha mais segura.';
@@ -103,6 +132,7 @@ class _TesteState extends State<Teste> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading:false,
         title: Text('Login e Cadastro'),
       ),
       body: Padding(
