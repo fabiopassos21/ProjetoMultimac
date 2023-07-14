@@ -1,117 +1,120 @@
-import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:fluttertoast/fluttertoast.dart';
-import 'package:projetoudemy/TelaPrincipal.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 
-final CollectionReference usuariosCollection =
-FirebaseFirestore.instance.collection('Usuarios');
+import 'Pagamento.dart';
+import 'TelaPrincipal.dart';
 
-
-class Teste extends StatefulWidget {
-  const Teste({Key? key}) : super(key: key);
-
-  @override
-  State<Teste> createState() => _TesteState();
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  runApp(const MyApp());
 }
 
-class _TesteState extends State<Teste> {
+class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        primarySwatch: Colors.green,
+        scaffoldBackgroundColor: Colors.green,
+        inputDecorationTheme: const InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(10)),
+            borderSide: BorderSide.none,
+          ),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.all(15),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        ),
+        textTheme: TextTheme(
+          headline6: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+          bodyText1: TextStyle(
+            fontSize: 18,
+            color: Colors.white54,
+          ),
+        ),
+      ),
+      home: const LoginScreen(),
+    );
+  }
+}
+
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({Key? key}) : super(key: key);
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
   String errorMessage = '';
-
-  Future<void> adicionarUsuario() async {
-    String email = emailController.text;
-    String senha = passwordController.text;
-
-    // Verifica se o usuário já existe no Firestore com o mesmo email
-    QuerySnapshot<Object?> snapshot = await usuariosCollection
-        .where('email', isEqualTo: email)
-        .get();
-
-    if (snapshot.docs.isEmpty) {
-      // O usuário não existe, então pode adicionar ao Firestore
-      usuariosCollection.add({
-        'email': email,
-        'senha': senha,
-        'saldo': 0, // Adiciona o campo "saldo" com o valor 0
-      }).then((value) {
-        print('Usuário $email adicionado com ID: ${value.id}');
-      }).catchError((error) {
-        print('Erro ao adicionar o usuário: $error');
-      });
-    } else {
-      // O usuário já existe, não é necessário adicionar novamente
-      print('Usuário $email já existe no Firestore');
-    }
-  }
-
-  Future<int> getSaldoFromFirestore(String email) async {
-    QuerySnapshot<Object?> snapshot = await usuariosCollection
-        .where('email', isEqualTo: email)
-        .get();
-
-    if (snapshot.docs.isNotEmpty) {
-      // O usuário existe, retorna o valor do saldo
-      return snapshot.docs[0]['saldo'] ?? 0;
-    } else {
-      // O usuário não existe, retorna 0 como saldo padrão
-      return 0;
-    }
-  }
+  String saldo = '0.00';
 
   Future<void> _login(BuildContext context) async {
     try {
-      UserCredential userCredential = await FirebaseAuth.instance
-          .signInWithEmailAndPassword(
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: emailController.text,
         password: passwordController.text,
       );
 
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('isLoggedIn', true);
-      print("DEU CERTO UHULLL");
-      print('Usuário logado: ${userCredential.user!.email}');
+      // Força a atualização dos dados do Firestore
+      await FirebaseFirestore.instance.collection('Usuarios').snapshots().first;
 
       // Obtém o saldo do usuário do Firestore
-      int saldo = await getSaldoFromFirestore(emailController.text);
+      saldo = await getSaldoFromFirestore(emailController.text);
 
-      Navigator.pushReplacement (
+      Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => TelaPrincipal(saldo: saldo)),
       );
     } on FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found') {
-        Fluttertoast.showToast(msg: 'E-mail ou senha incorretos');
         errorMessage = 'Usuário não encontrado.';
       } else if (e.code == 'wrong-password') {
-        Fluttertoast.showToast(msg: 'E-mail ou senha incorretos');
         errorMessage = 'Senha incorreta.';
       } else {
         errorMessage = 'Erro durante o login: ${e.message}';
-        Fluttertoast.showToast(msg: 'E-mail ou senha incorretos');
       }
+      setState(() {});
     } catch (e) {
       errorMessage = 'Erro durante o login: $e';
-      Fluttertoast.showToast(msg: 'E-mail ou senha incorretos');
+      setState(() {});
     }
   }
 
   Future<void> _register(BuildContext context) async {
     try {
-      UserCredential userCredential =
       await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: emailController.text,
         password: passwordController.text,
       );
 
-      print('Usuário cadastrado: ${userCredential.user!.email}');
-      Fluttertoast.showToast(msg: 'Login realizado com sucesso');
+      // Obtém o saldo do usuário do Firestore
+      saldo = await getSaldoFromFirestore(emailController.text);
 
-      // Chamar a função adicionarUsuario após o registro ser bem-sucedido
-      await adicionarUsuario();
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => TelaPrincipal(saldo: saldo)),
+      );
     } on FirebaseAuthException catch (e) {
       if (e.code == 'weak-password') {
         errorMessage = 'Senha fraca. Escolha uma senha mais segura.';
@@ -120,70 +123,192 @@ class _TesteState extends State<Teste> {
       } else {
         errorMessage = 'Erro durante o cadastro: ${e.message}';
       }
-      setState(() {
-        Fluttertoast.showToast(msg: 'E-mail ou senha incorretos');
-      });
+      setState(() {});
     } catch (e) {
       errorMessage = 'Erro durante o cadastro: $e';
+      setState(() {});
     }
+  }
+
+  Future<String> getSaldoFromFirestore(String email) async {
+    String saldo = '0.00';
+
+    try {
+      QuerySnapshot<Map<String, dynamic>> snapshot =
+      await FirebaseFirestore.instance
+          .collection('Usuarios')
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isNotEmpty) {
+        DocumentSnapshot<Map<String, dynamic>> userDoc = snapshot.docs.first;
+        saldo = userDoc.get('saldo').toString();
+      }
+    } catch (e) {
+      print('Erro ao obter saldo do Firestore: $e');
+    }
+
+    return saldo;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading:false,
-        title: Text('Login e Cadastro'),
-      ),
-      body: Padding(
-        padding: EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            TextField(
-              controller: emailController,
-              decoration: InputDecoration(
-                labelText: 'Email',
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 200,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Multimac'.toUpperCase(),
+                  style: Theme.of(context).textTheme.headline6,
+                ),
+                Text(
+                  'Pagina de Login',
+                  style: Theme.of(context).textTheme.bodyText1,
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  topRight: Radius.circular(30),
+                  topLeft: Radius.circular(30),
+                ),
+              ),
+              child: ListView(
+                padding: const EdgeInsets.all(20),
+                children: [
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: emailController,
+                    decoration: const InputDecoration(
+                      hintText: 'Email',
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  TextField(
+                    controller: passwordController,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      hintText: 'Senha',
+                    ),
+                  ),
+                  Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: TextButton(
+                      onPressed: () {}, // SEM USO
+                      child: const Text('Esqueceu a senha?'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ElevatedButton(
+                    onPressed: () => _login(context),
+                    child: const Text('Login'),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text("Não possui uma conta?"),
+                      TextButton(
+                        onPressed: () => _register(context),
+                        child: const Text('Criar conta'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16.0),
+                  Text(
+                    errorMessage,
+                    style: const TextStyle(
+                      color: Colors.red,
+                      fontSize: 16.0,
+                    ),
+                  ),
+                ],
               ),
             ),
-            SizedBox(height: 16.0),
-            TextField(
-              controller: passwordController,
-              obscureText: true,
-              decoration: InputDecoration(
-                labelText: 'Senha',
-              ),
-            ),
-            SizedBox(height: 24.0),
-            ElevatedButton(
-              onPressed: () => _login(context),
-              child: Text('Entrar'),
-            ),
-            SizedBox(height: 8.0),
-            ElevatedButton(
-              onPressed: () => _register(context),
-              child: Text('Cadastrar'),
-            ),
-            SizedBox(height: 16.0),
-            Text(
-              errorMessage,
-              style: TextStyle(
-                color: Colors.red,
-                fontSize: 16.0,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+class TelaPrincipal extends StatelessWidget {
+  final String saldo;
 
-  runApp(MaterialApp(
-    home: Teste(),
-  ));
+  const TelaPrincipal({Key? key, required this.saldo}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Tela Principal'),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('Bem-vindo à tela principal!'),
+            Text('Saldo: $saldo'),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          showModalBottomSheet(
+            context: context,
+            builder: (BuildContext context) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.info),
+                    title: const Text('Tutorial'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      // Implemente a ação desejada para o tutorial
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.payment),
+                    title: const Text('Pagamento'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => PixChargeView(saldo: saldo, onSaldoReceived: (String ) {  },),
+                        ),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.logout),
+                    title: const Text('Logout'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      // Implemente a ação desejada para o logout
+                    },
+                  ),
+                ],
+              );
+            },
+          );
+        },
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
 }
+
