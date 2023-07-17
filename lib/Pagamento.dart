@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -20,6 +21,9 @@ class PixChargeView extends StatefulWidget {
 class _PixChargeViewState extends State<PixChargeView> {
   late Uint8List _byteImage;
   String pixPart = '';
+  double progressValue = 0.0;
+  int countdown = 300; // 5 minutos em segundos
+  Timer? timer;
 
   @override
   void initState() {
@@ -27,7 +31,32 @@ class _PixChargeViewState extends State<PixChargeView> {
     _byteImage = Uint8List(0);
   }
 
+  @override
+  void dispose() {
+    timer?.cancel();
+    super.dispose();
+  }
+
+  void startTimer() {
+    timer = Timer.periodic(Duration(seconds: 1), (timer) {
+      setState(() {
+        if (countdown > 0) {
+          countdown--;
+          progressValue = 1.0 - (countdown / 300);
+        } else {
+          timer.cancel();
+          showPaymentResultScreen(); // Exibe a tela de resultado do pagamento
+        }
+      });
+    });
+  }
+
   void createCharge() {
+    setState(() {
+      countdown = 300; // Reinicia o contador regressivo
+      progressValue = 0.0; // Reinicia o progresso
+    });
+
     Gerencianet gerencianet = Gerencianet(PixOptions.OPTIONS);
     Map<String, dynamic> body = {
       "calendario": {
@@ -49,12 +78,15 @@ class _PixChargeViewState extends State<PixChargeView> {
           int endIndex = pixLine.length < startIndex + 10 ? pixLine.length : startIndex + 10;
           pixPart = pixLine.substring(startIndex, endIndex);
         });
-        print(value);
 
-        // Verifica o status do pagamento
-        checkPaymentStatus(value['loc']['id']);
-      }).catchError((onError) => print(onError));
-    }).catchError((onError) => print(onError));
+        // Inicia a contagem regressiva
+        startTimer();
+      }).catchError((onError) {
+        print('Erro ao gerar o QR code: $onError');
+      });
+    }).catchError((onError) {
+      print('Erro ao criar a cobrança: $onError');
+    });
   }
 
   Future<String> getAccessToken() async {
@@ -69,7 +101,7 @@ class _PixChargeViewState extends State<PixChargeView> {
     };
     String body = 'grant_type=client_credentials';
 
-    http.Response response = await http.post(apiUrl as Uri, headers: headers, body: body);
+    http.Response response = await http.post(Uri.parse(apiUrl), headers: headers, body: body);
     if (response.statusCode == 200) {
       Map<String, dynamic> responseBody = jsonDecode(response.body);
       String accessToken = responseBody['access_token'];
@@ -87,7 +119,7 @@ class _PixChargeViewState extends State<PixChargeView> {
       'Content-Type': 'application/json',
     };
 
-    http.Response response = await http.get(apiUrl as Uri, headers: headers);
+    http.Response response = await http.get(Uri.parse(apiUrl), headers: headers);
     if (response.statusCode == 200) {
       Map<String, dynamic> paymentStatus = jsonDecode(response.body);
       String status = paymentStatus['status'];
@@ -99,6 +131,8 @@ class _PixChargeViewState extends State<PixChargeView> {
         updateOrderStatus(); // Atualiza o estado do pedido ou transação
         sendPaymentConfirmationEmail(); // Envia um e-mail de confirmação ao usuário
         // Outras ações adicionais que você deseja executar
+
+        print('Pagamento confirmado: $cobrancaId'); // Print quando o pagamento for confirmado
       } else if (status == 'pendente') {
         // O pagamento está pendente
         showPendingPaymentDialog(); // Exibe um diálogo ou uma mensagem informando ao usuário que o pagamento está pendente
@@ -182,6 +216,15 @@ class _PixChargeViewState extends State<PixChargeView> {
     );
   }
 
+  void showPaymentResultScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PaymentResultScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -202,7 +245,17 @@ class _PixChargeViewState extends State<PixChargeView> {
       child: Column(
         children: [
           _qrCode(),
+          SizedBox(height: 16),
+          LinearProgressIndicator(
+            value: progressValue,
+          ),
+          SizedBox(height: 16),
           Text(pixPart),
+          SizedBox(height: 16),
+          Text(
+            '${(countdown ~/ 60).toString().padLeft(2, '0')}:${(countdown % 60).toString().padLeft(2, '0')}',
+            style: TextStyle(fontSize: 24),
+          ),
         ],
       ),
     );
@@ -210,5 +263,22 @@ class _PixChargeViewState extends State<PixChargeView> {
 
   Widget _qrCode() {
     return Image.memory(_byteImage.buffer.asUint8List());
+  }
+}
+
+class PaymentResultScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("Resultado do Pagamento"),
+      ),
+      body: Center(
+        child: Text(
+          "O pagamento está pendente ou falhou.",
+          style: TextStyle(fontSize: 24),
+        ),
+      ),
+    );
   }
 }

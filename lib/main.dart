@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'Pagamento.dart';
 import 'TelaPrincipal.dart';
@@ -52,22 +53,65 @@ class MyApp extends StatelessWidget {
         ),
       ),
       home: const LoginScreen(),
+
     );
   }
 }
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({Key? key}) : super(key: key);
+const LoginScreen({Key? key}) : super(key: key);
 
-  @override
-  State<LoginScreen> createState() => _LoginScreenState();
+@override
+State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController emailController = TextEditingController();
-  final TextEditingController passwordController = TextEditingController();
-  String errorMessage = '';
-  String saldo = '0.00';
+final TextEditingController emailController = TextEditingController();
+final TextEditingController passwordController = TextEditingController();
+String errorMessage = '';
+String saldo = '0.00';
+
+Future<bool> checkLoginState() async {
+SharedPreferences prefs = await SharedPreferences.getInstance();
+bool isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+String savedEmail = prefs.getString('email') ?? '';
+String savedPassword = prefs.getString('password') ?? '';
+
+if (isLoggedIn) {
+emailController.text = savedEmail;
+passwordController.text = savedPassword;
+
+try {
+await FirebaseAuth.instance.signInWithEmailAndPassword(
+email: savedEmail,
+password: savedPassword,
+);
+
+// Força a atualização dos dados do Firestore
+await FirebaseFirestore.instance.collection('Usuarios').doc(savedEmail).get();
+
+// Obtém o saldo do usuário do Firestore
+saldo = await getSaldoFromFirestore(savedEmail);
+
+return true; // Indica que o usuário está logado
+} on FirebaseAuthException catch (e) {
+// Lidar com o erro de autenticação, se necessário
+print('Erro durante o login: ${e.message}');
+} catch (e) {
+// Lidar com outros erros, se necessário
+print('Erro durante o login: $e');
+}
+}
+
+return false; // Indica que o usuário não está logado
+}
+
+Future<void> saveLoginState(String email, String password) async {
+SharedPreferences prefs = await SharedPreferences.getInstance();
+await prefs.setBool('isLoggedIn', true);
+await prefs.setString('email', email);
+await prefs.setString('password', password);
+}
 
   Future<void> _login(BuildContext context) async {
     try {
@@ -165,6 +209,7 @@ class _LoginScreenState extends State<LoginScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+
                 Text(
                   'Multimac'.toUpperCase(),
                   style: Theme.of(context).textTheme.headline6,
@@ -241,74 +286,11 @@ class _LoginScreenState extends State<LoginScreen> {
         ],
       ),
     );
+
   }
+
 }
 
-class TelaPrincipal extends StatelessWidget {
-  final String saldo;
 
-  const TelaPrincipal({Key? key, required this.saldo}) : super(key: key);
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Tela Principal'),
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text('Bem-vindo à tela principal!'),
-            Text('Saldo: $saldo'),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          showModalBottomSheet(
-            context: context,
-            builder: (BuildContext context) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.info),
-                    title: const Text('Tutorial'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      // Implemente a ação desejada para o tutorial
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.payment),
-                    title: const Text('Pagamento'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => PixChargeView(saldo: saldo, onSaldoReceived: (String ) {  },),
-                        ),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.logout),
-                    title: const Text('Logout'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      // Implemente a ação desejada para o logout
-                    },
-                  ),
-                ],
-              );
-            },
-          );
-        },
-        child: const Icon(Icons.add),
-      ),
-    );
-  }
-}
 
